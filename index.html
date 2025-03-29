@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SankeyBudget</title>
+  <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    .input-section {
+      background-color: #f5f5f5;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .form-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+    }
+    input, select {
+      padding: 8px;
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    button {
+      background-color: #4285f4;
+      color: white;
+      border: none;
+      padding: 10px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    button:hover {
+      background-color: #3367d6;
+    }
+    #chart_div {
+      width: 100%;
+      height: 600px;
+      margin-top: 20px;
+    }
+    .items-list {
+      margin-top: 20px;
+    }
+    .item {
+      background-color: white;
+      padding: 10px;
+      margin-bottom: 10px;
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      display: flex;
+      justify-content: space-between;
+    }
+    .item button {
+      background-color: #db4437;
+      padding: 5px 10px;
+    }
+    .section-title {
+      margin-top: 30px;
+      margin-bottom: 15px;
+      font-size: 1.2em;
+      color: #333;
+    }
+    .file-actions {
+      margin: 20px 0;
+      padding: 15px;
+      background-color: #f0f7ff;
+      border-radius: 8px;
+    }
+    .file-input {
+      display: none;
+    }
+    #summary-section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f9f9f9;
+      border-radius: 8px;
+    }
+    #data-table-section {
+      margin: 20px 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      padding: 8px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    th {
+      background-color: #e6f2ff;
+    }
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+  </style>
+</head>
+<body>
+  <h1>Budget Visualization with Sankey Diagram</h1>
+  <h6>by Leeladurga Prasad</h6>
+  <div class="file-actions">
+    <h2>Save/Load Budget</h2>
+    <button onclick="saveToFile()">Save Budget to File</button>
+    <button onclick="document.getElementById('file-input').click()">Load Budget from File</button>
+    <input type="file" id="file-input" class="file-input" accept=".json" onchange="loadFromFile(this)">
+  </div>
+  
+  <div class="input-section">
+    <h2>Add Income Source</h2>
+    <div class="form-group">
+      <label for="income-name">Income Source Name:</label>
+      <input type="text" id="income-name" placeholder="e.g., Salary, Freelance, Investments">
+    </div>
+    <div class="form-group">
+      <label for="income-amount">Amount (₹):</label>
+      <input type="number" id="income-amount" placeholder="e.g., 3000" step="0.01" min="0">
+    </div>
+    <button onclick="addIncome()">Add Income Source</button>
+    
+    <div class="items-list" id="income-list">
+      <div class="section-title">Your Income Sources</div>
+    </div>
+  </div>
+  
+  <div class="input-section">
+    <h2>Add Expense Category</h2>
+    <div class="form-group">
+      <label for="expense-name">Expense Category Name:</label>
+      <input type="text" id="expense-name" placeholder="e.g., Rent, Groceries, Entertainment">
+    </div>
+    <div class="form-group">
+      <label for="expense-amount">Amount (₹):</label>
+      <input type="number" id="expense-amount" placeholder="e.g., 1000" step="0.01" min="0">
+    </div>
+    <div class="form-group">
+      <label for="expense-source">Funded From:</label>
+      <select id="expense-source"></select>
+    </div>
+    <button onclick="addExpense()">Add Expense Category</button>
+    
+    <div class="items-list" id="expense-list">
+      <div class="section-title">Your Expense Categories</div>
+    </div>
+  </div>
+  
+  <button onclick="drawChart()">Generate Visualization</button>
+  
+  <div id="summary-section">
+    <h3>Budget Summary</h3>
+    <div id="summary-table"></div>
+  </div>
+  
+  <div id="chart_div"></div>
+  
+  <div id="data-table-section">
+    <h3>Detailed Budget Data</h3>
+    <div id="data-table"></div>
+  </div>
+  
+  <script>
+    // Store income and expense data
+    let incomes = [];
+    let expenses = [];
+    
+    // Utility function for proper financial rounding
+    function financialRound(num) {
+      return parseFloat(parseFloat(num).toFixed(2));
+    }
+    
+    // Format money for display
+    function formatMoney(amount) {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'INR',
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(amount);
+    }
+    
+    // Validate money input
+    function validateMoneyInput(value) {
+      // Remove any non-digit characters except decimal point
+      const cleaned = value.replace(/[^\d.]/g, '');
+      
+      // Ensure there's at most one decimal point
+      if ((cleaned.match(/\./g) || []).length > 1) {
+        return false;
+      }
+      
+      // Ensure maximum of 2 decimal places
+      if (cleaned.includes('.') && cleaned.split('.')[1].length > 2) {
+        return false;
+      }
+      
+      return true;
+    }
+    
+    // Add input validation listeners
+    document.getElementById('income-amount').addEventListener('input', function(e) {
+      if (!validateMoneyInput(e.target.value)) {
+        e.target.value = e.target.value.slice(0, -1);
+      }
+    });
+    
+    document.getElementById('expense-amount').addEventListener('input', function(e) {
+      if (!validateMoneyInput(e.target.value)) {
+        e.target.value = e.target.value.slice(0, -1);
+      }
+    });
+    
+    // Add an income source
+    function addIncome() {
+      const name = document.getElementById('income-name').value;
+      const amount = financialRound(parseFloat(document.getElementById('income-amount').value));
+      
+      if (!name || isNaN(amount) || amount <= 0) {
+        alert('Please enter valid income name and amount');
+        return;
+      }
+      
+      const income = { name, amount };
+      incomes.push(income);
+      updateIncomeList();
+      updateExpenseSourceDropdown();
+      
+      // Clear inputs
+      document.getElementById('income-name').value = '';
+      document.getElementById('income-amount').value = '';
+    }
+    
+    // Add an expense category
+    function addExpense() {
+      const name = document.getElementById('expense-name').value;
+      const amount = financialRound(parseFloat(document.getElementById('expense-amount').value));
+      const source = document.getElementById('expense-source').value;
+      
+      if (!name || isNaN(amount) || amount <= 0 || !source) {
+        alert('Please fill all fields with valid values');
+        return;
+      }
+      
+      const expense = { name, amount, source };
+      expenses.push(expense);
+      updateExpenseList();
+      
+      // Clear inputs
+      document.getElementById('expense-name').value = '';
+      document.getElementById('expense-amount').value = '';
+    }
+    
+    // Update the displayed list of income sources
+    function updateIncomeList() {
+      const list = document.getElementById('income-list');
+      // Clear existing items except the title
+      while (list.children.length > 1) {
+        list.removeChild(list.lastChild);
+      }
+      
+      if (incomes.length === 0) {
+        const emptyMsg = document.createElement('div');
+        emptyMsg.textContent = 'No income sources added yet';
+        list.appendChild(emptyMsg);
+        return;
+      }
+      
+      incomes.forEach((income, index) => {
+        const item = document.createElement('div');
+        item.className = 'item';
+        
+        const info = document.createElement('div');
+        info.textContent = `${income.name}: ${formatMoney(income.amount)}`;
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.onclick = () => {
+          incomes.splice(index, 1);
+          updateIncomeList();
+          updateExpenseSourceDropdown();
+          // Also remove any expenses that were funded by this income
+          expenses = expenses.filter(exp => exp.source !== income.name);
+          updateExpenseList();
+        };
+        
+        item.appendChild(info);
+        item.appendChild(deleteBtn);
+        list.appendChild(item);
+      });
+    }
+    
+    // Update the displayed list of expenses
+    function updateExpenseList() {
+      const list = document.getElementById('expense-list');
+      // Clear existing items except the title
+      while (list.children.length > 1) {
+        list.removeChild(list.lastChild);
+      }
+      
+      if (expenses.length === 0) {
+        const emptyMsg = document.createElement('div');
+        emptyMsg.textContent = 'No expense categories added yet';
+        list.appendChild(emptyMsg);
+        return;
+      }
+      
+      expenses.forEach((expense, index) => {
+        const item = document.createElement('div');
+        item.className = 'item';
+        
+        const info = document.createElement('div');
+        info.textContent = `${expense.name}: ${formatMoney(expense.amount)} (from ${expense.source})`;
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = 'Delete';
+        deleteBtn.onclick = () => {
+          expenses.splice(index, 1);
+          updateExpenseList();
+        };
+        
+        item.appendChild(info);
+        item.appendChild(deleteBtn);
+        list.appendChild(item);
+      });
+    }
+    
+    // Update the dropdown for selecting income sources when adding expenses
+    function updateExpenseSourceDropdown() {
+      const dropdown = document.getElementById('expense-source');
+      // Clear existing options
+      dropdown.innerHTML = '';
+      
+      if (incomes.length === 0) {
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = 'No income sources available';
+        dropdown.appendChild(option);
+        return;
+      }
+      
+      incomes.forEach(income => {
+        const option = document.createElement('option');
+        option.value = income.name;
+        option.textContent = income.name;
+        dropdown.appendChild(option);
+      });
+    }
+    
+    // Show budget summary
+    function showSummary() {
+      const totalIncome = financialRound(incomes.reduce((sum, income) => sum + income.amount, 0));
+      const totalExpenses = financialRound(expenses.reduce((sum, expense) => sum + expense.amount, 0));
+      const savings = financialRound(totalIncome - totalExpenses);
+      
+      const summaryHTML = `
+        <table>
+          <tr>
+            <th>Category</th>
+            <th style="text-align: right;">Amount</th>
+            <th style="text-align: right;">Percentage</th>
+          </tr>
+          <tr>
+            <td>Total Income</td>
+            <td style="text-align: right;">${formatMoney(totalIncome)}</td>
+            <td style="text-align: right;">100%</td>
+          </tr>
+          <tr>
+            <td>Total Expenses</td>
+            <td style="text-align: right;">${formatMoney(totalExpenses)}</td>
+            <td style="text-align: right;">${(totalExpenses/totalIncome*100).toFixed(1)}%</td>
+          </tr>
+          <tr style="font-weight: bold; background-color: ${savings >= 0 ? '#e6ffe6' : '#ffe6e6'};">
+            <td>${savings >= 0 ? 'Savings' : 'Deficit'}</td>
+            <td style="text-align: right;">${formatMoney(Math.abs(savings))}</td>
+            <td style="text-align: right;">${Math.abs(savings/totalIncome*100).toFixed(1)}%</td>
+          </tr>
+        </table>
+      `;
+      
+      document.getElementById('summary-table').innerHTML = summaryHTML;
+    }
+    
+    // Show detailed data table
+    function showDataTable() {
+      let tableHTML = `
+        <table>
+          <tr>
+            <th>Type</th>
+            <th>Name</th>
+            <th style="text-align: right;">Amount</th>
+            <th>Source</th>
+          </tr>
+      `;
+      
+      // Add income rows
+      incomes.forEach(income => {
+        tableHTML += `
+          <tr style="background-color: #f0f8ff;">
+            <td>Income</td>
+            <td>${income.name}</td>
+            <td style="text-align: right;">${formatMoney(income.amount)}</td>
+            <td>-</td>
+          </tr>
+        `;
+      });
+      
+      // Add expense rows
+      expenses.forEach(expense => {
+        tableHTML += `
+          <tr>
+            <td>Expense</td>
+            <td>${expense.name}</td>
+            <td style="text-align: right;">${formatMoney(expense.amount)}</td>
+            <td>${expense.source}</td>
+          </tr>
+        `;
+      });
+      
+      tableHTML += `</table>`;
+      document.getElementById('data-table').innerHTML = tableHTML;
+    }
+    
+    // Draw the Sankey diagram
+    function drawChart() {
+      if (incomes.length === 0 || expenses.length === 0) {
+        alert('Please add at least one income source and one expense category');
+        return;
+      }
+      
+      // Calculate total income to check if expenses exceed income
+      const totalIncome = financialRound(incomes.reduce((sum, income) => sum + income.amount, 0));
+      const totalExpenses = financialRound(expenses.reduce((sum, expense) => sum + expense.amount, 0));
+      
+      if (totalExpenses > totalIncome) {
+        if (!confirm('Warning: Your expenses exceed your income. Do you want to continue?')) {
+          return;
+        }
+      }
+      
+      // Load the visualization API
+      google.charts.load('current', {'packages':['sankey']});
+      google.charts.setOnLoadCallback(drawSankey);
+    }
+    
+    function drawSankey() {
+      // Create the data table
+      const data = new google.visualization.DataTable();
+      data.addColumn('string', 'From');
+      data.addColumn('string', 'To');
+      data.addColumn('number', 'Amount');
+      data.addColumn({type: 'string', role: 'tooltip'});
+      
+      // Add income to expense flows with formatted tooltips
+      expenses.forEach(expense => {
+        data.addRow([
+          expense.source, 
+          expense.name, 
+          expense.amount,
+          `${expense.source} → ${expense.name}\nAmount: ${formatMoney(expense.amount)}`
+        ]);
+      });
+      
+      // Calculate totals with proper rounding
+      const totalIncome = financialRound(incomes.reduce((sum, income) => sum + income.amount, 0));
+      const totalExpenses = financialRound(expenses.reduce((sum, expense) => sum + expense.amount, 0));
+      const savings = financialRound(totalIncome - totalExpenses);
+      
+      // Add remaining income to savings with formatted tooltips
+      if (savings > 0) {
+        let distributed = 0;
+        
+        for (let i = 0; i < incomes.length; i++) {
+          const income = incomes[i];
+          let incomeSavings;
+          
+          if (i === incomes.length - 1) {
+            incomeSavings = financialRound(savings - distributed);
+          } else {
+            const incomeRatio = income.amount / totalIncome;
+            incomeSavings = financialRound(savings * incomeRatio);
+            distributed += incomeSavings;
+          }
+          
+          if (incomeSavings > 0) {
+            data.addRow([
+              income.name, 
+              'Savings', 
+              incomeSavings,
+              `${income.name} → Savings\nAmount: ${formatMoney(incomeSavings)}`
+            ]);
+          }
+        }
+      }
+      
+      // Set chart options
+      const options = {
+        width: '100%',
+        height: 600,
+        sankey: {
+          node: {
+            colors: ['#4285f4', '#34a853', '#ea4335', '#fbbc05', '#673ab7'],
+            width: 20,
+            nodePadding: 40,
+            label: { 
+              fontName: 'Arial',
+              fontSize: 12,
+              color: '#333',
+              bold: true
+            }
+          },
+          link: {
+            colorMode: 'gradient',
+            colors: ['#4285f4', '#34a853', '#ea4335', '#fbbc05', '#673ab7']
+          }
+        },
+        tooltip: { 
+          isHtml: true,
+          textStyle: { fontSize: 14 }
+        }
+      };
+      
+      // Format numbers in the data table
+      const formatter = new google.visualization.NumberFormat({
+        pattern: '₹#,##0.00'
+      });
+      formatter.format(data, 2); // Format the amount column
+      
+      // Draw the chart
+      const chart = new google.visualization.Sankey(document.getElementById('chart_div'));
+      chart.draw(data, options);
+      
+      // Show summary and data table
+      showSummary();
+      showDataTable();
+    }
+    
+    // Save data to a JSON file
+    function saveToFile() {
+      if (incomes.length === 0 && expenses.length === 0) {
+        alert('No budget data to save');
+        return;
+      }
+      
+      const budgetData = {
+        incomes: incomes,
+        expenses: expenses,
+        version: 1.0,
+        lastSaved: new Date().toISOString()
+      };
+      
+      const dataStr = JSON.stringify(budgetData, null, 2);
+      const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+      
+      const exportName = 'budget_data_' + new Date().toISOString().slice(0, 10) + '.json';
+      
+      const linkElement = document.createElement('a');
+      linkElement.setAttribute('href', dataUri);
+      linkElement.setAttribute('download', exportName);
+      linkElement.click();
+    }
+    
+    // Load data from a JSON file
+    function loadFromFile(input) {
+      const file = input.files[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const budgetData = JSON.parse(e.target.result);
+          
+          // Validate the loaded data
+          if (!budgetData.incomes || !budgetData.expenses) {
+            throw new Error('Invalid budget file format');
+          }
+          
+          // Clear current data
+          incomes = [];
+          expenses = [];
+          
+          // Load incomes
+          if (Array.isArray(budgetData.incomes)) {
+            budgetData.incomes.forEach(income => {
+              if (income.name && income.amount) {
+                incomes.push({
+                  name: income.name,
+                  amount: financialRound(parseFloat(income.amount))
+                });
+              }
+            });
+          }
+          
+          // Load expenses
+          if (Array.isArray(budgetData.expenses)) {
+            budgetData.expenses.forEach(expense => {
+              if (expense.name && expense.amount && expense.source) {
+                expenses.push({
+                  name: expense.name,
+                  amount: financialRound(parseFloat(expense.amount)),
+                  source: expense.source
+                });
+              }
+            });
+          }
+          
+          // Update UI
+          updateIncomeList();
+          updateExpenseList();
+          updateExpenseSourceDropdown();
+          
+          alert(`Successfully loaded budget with ${incomes.length} income sources and ${expenses.length} expense categories`);
+        } catch (error) {
+          alert('Error loading file: ' + error.message);
+          console.error(error);
+        }
+      };
+      reader.readAsText(file);
+    }
+    
+    // Initialize the page
+    updateIncomeList();
+    updateExpenseList();
+    updateExpenseSourceDropdown();
+  </script>
+</body>
+</html>
